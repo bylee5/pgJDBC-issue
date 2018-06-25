@@ -74,6 +74,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
 
   private static final Logger LOGGER = Logger.getLogger(QueryExecutorImpl.class.getName());
   private static final Pattern COMMAND_COMPLETE_PATTERN = Pattern.compile("^([A-Za-z]++)(?: (\\d++))?+(?: (\\d++))?+$");
+  private static final Pattern AG_COMMAND_COMPLETE_PATTERN = Pattern.compile("^([A-Z (,]+)([0-9]+)([A-Z ,]*)([0-9]*)([)])$");
 
   /**
    * TimeZone of the current connection (TimeZone backend parameter)
@@ -2489,6 +2490,36 @@ public class QueryExecutorImpl extends QueryExecutorBase {
         return;
       }
     }
+
+    /*
+     * Add command complete pattern for AgensGraph.
+     * If two numbers in the pattern match, one is the vertex and the other is the edge.
+     * The return value is the larger of the two values.
+     *
+     */
+    matcher = AG_COMMAND_COMPLETE_PATTERN.matcher(status);
+    if (matcher.matches()) {
+        String group2 = matcher.group(2);
+        String group4 = matcher.group(4);
+        try {
+            if (group4.length() > 0) {
+                long count2 = Long.parseLong(group2);
+                long count4 = Long.parseLong(group4);
+                count = count2 >= count4 ? count2 : count4;
+            } else if (group2.length() > 0) {
+                count = Long.parseLong(group2);
+            }
+        } catch (NumberFormatException e) {
+            // As we're performing a regex validation prior to parsing, this should only
+            // occurr if the oid or count are out of range.
+            handler.handleError(new PSQLException(
+                    GT.tr("Unable to parse the count in command completion tag: {0}.", status),
+                    PSQLState.CONNECTION_FAILURE));
+            return;
+        }
+    }
+
+
     int countAsInt = 0;
     if (count > Integer.MAX_VALUE) {
       // If command status indicates that we've modified more than Integer.MAX_VALUE rows
